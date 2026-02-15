@@ -30,6 +30,7 @@ jest.mock('fluent-ffmpeg', () => {
     return cmd;
   });
   factory._lastCommand = null;
+  factory.setFfmpegPath = jest.fn();
   return factory;
 });
 

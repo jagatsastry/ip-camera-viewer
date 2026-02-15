@@ -1,8 +1,33 @@
 const { app, BrowserWindow } = require('electron');
 const path = require('path');
+const fs = require('fs');
 
 let mainWindow = null;
 let expressServer = null;
+
+/**
+ * In a sandboxed MAS app, we can't write to the app bundle directory.
+ * Use the user data directory for recordings and stream segments.
+ */
+function setupAppPaths() {
+  const userData = app.getPath('userData');
+  const recordingsDir = path.join(userData, 'recordings');
+  const streamDir = path.join(userData, 'stream');
+
+  // Ensure directories exist
+  for (const dir of [recordingsDir, streamDir]) {
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+  }
+
+  // Override config paths before the server imports config.json
+  const config = require(path.join(__dirname, '..', 'config.json'));
+  config.recordingsDir = recordingsDir;
+  config.streamDir = streamDir;
+
+  return { recordingsDir, streamDir };
+}
 
 function createWindow(port) {
   mainWindow = new BrowserWindow({
@@ -10,6 +35,7 @@ function createWindow(port) {
     height: 800,
     backgroundColor: '#1a1a2e',
     title: 'IP Camera Viewer',
+    titleBarStyle: 'hiddenInset',
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -24,6 +50,9 @@ function createWindow(port) {
 }
 
 app.on('ready', () => {
+  // Set up sandbox-safe paths before importing the server
+  setupAppPaths();
+
   // Import the Express server — since require.main !== module,
   // it won't auto-listen. We start it ourselves on a random port.
   const { server } = require(path.join(__dirname, '..', 'src', 'server.js'));
@@ -38,8 +67,6 @@ app.on('ready', () => {
 });
 
 app.on('window-all-closed', () => {
-  // On macOS, apps typically stay active until Cmd+Q.
-  // For this app, we quit when all windows are closed.
   app.quit();
 });
 
@@ -52,7 +79,6 @@ app.on('before-quit', () => {
 });
 
 app.on('activate', () => {
-  // On macOS, re-create a window when dock icon is clicked and no windows exist.
   if (mainWindow === null && expressServer) {
     const port = expressServer.address().port;
     createWindow(port);

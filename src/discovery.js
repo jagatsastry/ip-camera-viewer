@@ -2,6 +2,7 @@ const onvif = require('onvif');
 const http = require('http');
 const net = require('net');
 const config = require('../config.json');
+const fingerprints = require('./fingerprints');
 
 class DiscoveryManager {
   constructor() {
@@ -255,37 +256,71 @@ class DiscoveryManager {
   }
 
   /**
-   * Try to identify an HTTP camera by requesting known endpoints.
+   * Try to identify an HTTP camera by probing all known brand endpoints.
+   * Returns the first match with brand identification.
    */
-  _identifyHttpCamera(host, port, timeoutMs) {
+  async _identifyHttpCamera(host, port, timeoutMs) {
+    const allPaths = fingerprints.getAllMjpegPaths();
+
+    // Try all known MJPEG paths in parallel
+    const results = await Promise.allSettled(
+      allPaths.map((path) => this._tryHttpPath(host, port, path, timeoutMs))
+    );
+
+    for (let i = 0; i < results.length; i++) {
+      if (results[i].status === 'fulfilled' && results[i].value) {
+        const matchedPath = allPaths[i];
+        const match = fingerprints.identifyByPath(matchedPath);
+        const brandName = match ? match.brand.name : 'Generic';
+        const audioPaths = match ? match.brand.audioPaths : [];
+
+        return {
+          hostname: host,
+          port,
+          name: `${brandName} Camera (${host})`,
+          brand: brandName,
+          protocol: 'http',
+          streamUrl: `http://${host}:${port}${matchedPath}`,
+          audioUrl: audioPaths.length ? `http://${host}:${port}${audioPaths[0]}` : null,
+          matchedPath,
+          source: 'probe',
+        };
+      }
+    }
+
+    // No MJPEG path matched — still report the open port
+    return {
+      hostname: host,
+      port,
+      name: `Device (${host})`,
+      protocol: 'http',
+      source: 'probe',
+    };
+  }
+
+  /**
+   * Try a single HTTP path and resolve true if it looks like a camera stream.
+   */
+  _tryHttpPath(host, port, path, timeoutMs) {
     return new Promise((resolve, reject) => {
       const req = http.get({
         hostname: host,
         port,
-        path: '/video/mjpg.cgi',
+        path,
         timeout: timeoutMs,
       }, (res) => {
         const contentType = res.headers['content-type'] || '';
+        const statusCode = res.statusCode;
         res.destroy();
 
-        if (contentType.includes('multipart') || contentType.includes('image/jpeg') || contentType.includes('mjpeg')) {
-          resolve({
-            hostname: host,
-            port,
-            name: `IP Camera (${host})`,
-            protocol: 'http',
-            streamUrl: `http://${host}:${port}/video/mjpg.cgi`,
-            source: 'probe',
-          });
+        if (statusCode >= 200 && statusCode < 400 &&
+            (contentType.includes('multipart') ||
+             contentType.includes('image/jpeg') ||
+             contentType.includes('mjpeg') ||
+             contentType.includes('video'))) {
+          resolve(true);
         } else {
-          // Port open, HTTP responds, but not clearly a camera MJPEG endpoint
-          resolve({
-            hostname: host,
-            port,
-            name: `Device (${host})`,
-            protocol: 'http',
-            source: 'probe',
-          });
+          resolve(false);
         }
       });
 

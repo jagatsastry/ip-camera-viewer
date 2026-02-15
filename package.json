@@ -8,17 +8,21 @@
     "dev": "node --watch src/server.js",
     "test": "jest --detectOpenHandles --forceExit",
     "electron": "electron electron/main.js",
-    "electron:build": "electron-builder",
+    "electron:build": "electron-builder --mac dmg zip",
+    "electron:build:mas": "electron-builder --mac mas",
+    "electron:build:all": "electron-builder --mac dmg zip mas",
     "test:e2e": "npx playwright test"
   },
   "dependencies": {
     "express": "^4.18.2",
+    "ffmpeg-static": "^5.3.0",
     "fluent-ffmpeg": "^2.1.2",
     "onvif": "^0.8.1",
     "uuid": "^9.0.0",
     "ws": "^8.16.0"
   },
   "devDependencies": {
+    "@electron/notarize": "^3.1.1",
     "@playwright/test": "^1.58.2",
     "electron": "^33.4.11",
     "electron-builder": "^25.1.8",
@@ -37,7 +41,7 @@
     ]
   },
   "build": {
-    "appId": "com.ip-camera-app.viewer",
+    "appId": "com.jagatsastry.ip-camera-viewer",
     "productName": "IP Camera Viewer",
     "directories": {
       "output": "dist"
@@ -49,12 +53,38 @@
       "config.json",
       "node_modules/**/*"
     ],
+    "extraResources": [
+      {
+        "from": "node_modules/ffmpeg-static/ffmpeg",
+        "to": "ffmpeg"
+      }
+    ],
+    "afterSign": "electron/notarize.js",
     "mac": {
       "category": "public.app-category.utilities",
+      "icon": "electron/icon.icns",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "electron/entitlements.mac.plist",
+      "entitlementsInherit": "electron/entitlements.mac.plist",
       "target": [
         "dmg",
         "zip"
       ]
+    },
+    "mas": {
+      "category": "public.app-category.utilities",
+      "entitlements": "electron/entitlements.mas.plist",
+      "entitlementsInherit": "electron/entitlements.mas.inherit.plist",
+      "hardenedRuntime": false,
+      "provisioningProfile": "embedded.provisionprofile"
+    },
+    "dmg": {
+      "contents": [
+        { "x": 130, "y": 220 },
+        { "x": 410, "y": 220, "type": "link", "path": "/Applications" }
+      ],
+      "title": "IP Camera Viewer"
     }
   }
 }

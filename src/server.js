@@ -2,9 +2,14 @@ const express = require('express');
 const http = require('http');
 const { WebSocketServer } = require('ws');
 const path = require('path');
+const ffmpeg = require('fluent-ffmpeg');
+const getFfmpegPath = require('./ffmpeg-path');
 const config = require('../config.json');
 const CameraManager = require('./camera');
 const RecorderManager = require('./recorder');
+
+// Set FFmpeg binary path (bundled in Electron, ffmpeg-static in dev, or system PATH)
+ffmpeg.setFfmpegPath(getFfmpegPath());
 const SchedulerManager = require('./scheduler');
 const CameraStore = require('./cameras-store');
 const DiscoveryManager = require('./discovery');
