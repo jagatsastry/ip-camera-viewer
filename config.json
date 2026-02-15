@@ -1,0 +1,12 @@
+{
+  "port": 3000,
+  "defaultCameraIp": "192.168.86.44",
+  "recordingsDir": "./recordings",
+  "streamDir": "./stream",
+  "ffmpegPath": "ffmpeg",
+  "hlsSegmentDuration": 2,
+  "hlsListSize": 5,
+  "supportedProtocols": ["rtsp", "http", "rtmp"],
+  "commonRtspPorts": [554, 8554],
+  "commonHttpPorts": [80, 8080, 8081]
+}

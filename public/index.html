@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IP Camera Viewer</title>
+  <link href="https://vjs.zencdn.net/8.10.0/video-js.css" rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" rel="stylesheet">
+  <link href="css/style.css" rel="stylesheet">
+</head>
+<body>
+  <header class="app-header">
+    <div class="header-left">
+      <i class="fas fa-video"></i>
+      <h1>IP Camera Viewer</h1>
+    </div>
+    <div class="header-right">
+      <span class="status-indicator" id="statusIndicator">
+        <span class="status-dot"></span>
+        <span class="status-text">Disconnected</span>
+      </span>
+    </div>
+  </header>
+
+  <main class="app-main">
+    <section class="player-section">
+      <!-- Live Stream Area (always visible) -->
+      <div class="video-container" id="liveStreamContainer">
+        <div class="stream-label"><i class="fas fa-circle live-dot"></i> LIVE</div>
+        <img id="mjpegPlayer" class="mjpeg-player" style="display:none;" alt="Camera Stream">
+        <div class="no-stream-placeholder" id="noStreamPlaceholder">
+          <i class="fas fa-video-slash"></i>
+          <p>Connecting to camera...</p>
+        </div>
+        <div class="audio-controls" id="audioControls" style="display:none;">
+          <button id="btnToggleMute" class="btn-icon audio-btn" title="Mute/Unmute">
+            <i class="fas fa-volume-up" id="muteIcon"></i>
+          </button>
+          <input type="range" id="volumeSlider" class="volume-slider" min="0" max="100" value="75">
+        </div>
+        <audio id="audioPlayer" preload="none"></audio>
+        <div class="recording-badge" id="recordingBadge">
+          <span class="rec-dot"></span>
+          <span>REC</span>
+          <span class="rec-timer" id="recTimer">00:00:00</span>
+        </div>
+      </div>
+
+      <div class="controls-panel">
+        <div class="camera-input-group">
+          <label for="cameraUrl">Camera URL</label>
+          <div class="input-row">
+            <input
+              type="text"
+              id="cameraUrl"
+              placeholder="e.g. admin:password@192.168.86.44"
+              value=""
+            >
+            <div class="protocol-select">
+              <label class="protocol-option">
+                <input type="radio" name="protocol" value="auto" checked>
+                <span>Auto</span>
+              </label>
+              <label class="protocol-option">
+                <input type="radio" name="protocol" value="rtsp">
+                <span>RTSP</span>
+              </label>
+              <label class="protocol-option">
+                <input type="radio" name="protocol" value="http">
+                <span>HTTP</span>
+              </label>
+              <label class="protocol-option">
+                <input type="radio" name="protocol" value="rtmp">
+                <span>RTMP</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="button-group">
+          <div class="stream-controls">
+            <button id="btnStartStream" class="btn btn-start" title="Start Stream">
+              <i class="fas fa-play"></i>
+              <span>Start Stream</span>
+            </button>
+            <button id="btnStopStream" class="btn btn-stop" disabled title="Stop Stream">
+              <i class="fas fa-stop"></i>
+              <span>Stop Stream</span>
+            </button>
+          </div>
+          <div class="record-controls">
+            <button id="btnStartRecord" class="btn btn-record" title="Start Recording">
+              <i class="fas fa-circle"></i>
+              <span>Record</span>
+            </button>
+            <button id="btnStopRecord" class="btn btn-stop-record" disabled title="Stop Recording">
+              <i class="fas fa-square"></i>
+              <span>Stop Rec</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <aside class="sidebar-section">
+      <div class="sidebar-tabs">
+        <button class="tab-btn active" data-tab="recordings"><i class="fas fa-folder-open"></i> Recordings</button>
+        <button class="tab-btn" data-tab="schedules"><i class="fas fa-clock"></i> Schedules</button>
+        <button class="tab-btn" data-tab="cameras"><i class="fas fa-camera"></i> Cameras</button>
+      </div>
+
+      <div class="tab-panel active" id="tabRecordings">
+        <div class="panel-header">
+          <button id="btnRefreshRecordings" class="btn btn-icon" title="Refresh">
+            <i class="fas fa-sync-alt"></i>
+          </button>
+        </div>
+        <div class="recordings-list" id="recordingsList">
+          <div class="empty-state">
+            <i class="fas fa-film"></i>
+            <p>No recordings yet</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="tab-panel" id="tabSchedules">
+        <div class="panel-header">
+          <button id="btnAddSchedule" class="btn btn-start btn-sm">
+            <i class="fas fa-plus"></i> Add Schedule
+          </button>
+        </div>
+        <div class="schedules-list" id="schedulesList">
+          <div class="empty-state">
+            <i class="fas fa-calendar-times"></i>
+            <p>No schedules</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="tab-panel" id="tabCameras">
+        <div class="panel-header">
+          <button id="btnAddCamera" class="btn btn-start btn-sm">
+            <i class="fas fa-plus"></i> Add Camera
+          </button>
+        </div>
+        <div class="cameras-list" id="camerasList">
+          <div class="empty-state">
+            <i class="fas fa-camera-retro"></i>
+            <p>No cameras saved</p>
+          </div>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <!-- Recording Playback Modal (separate from live stream) -->
+  <div class="modal-overlay" id="playbackModal" style="display:none;">
+    <div class="modal modal-playback">
+      <div class="modal-header">
+        <h3 id="playbackTitle">Recording Playback</h3>
+        <button class="btn-icon" id="btnClosePlayback"><i class="fas fa-times"></i></button>
+      </div>
+      <div class="modal-body playback-body">
+        <video
+          id="playbackPlayer"
+          class="video-js vjs-default-skin vjs-big-play-centered"
+          controls
+          preload="auto"
+        >
+        </video>
+      </div>
+    </div>
+  </div>
+
+  <!-- Schedule Modal -->
+  <div class="modal-overlay" id="scheduleModal" style="display:none;">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="scheduleModalTitle">Add Schedule</h3>
+        <button class="btn-icon" id="btnCloseModal"><i class="fas fa-times"></i></button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>Name</label>
+          <input type="text" id="schedName" placeholder="e.g. Night recording">
+        </div>
+        <div class="form-group">
+          <label>Camera URL</label>
+          <input type="text" id="schedCameraUrl" placeholder="Camera URL">
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Start Time</label>
+            <input type="time" id="schedStartTime" value="22:00">
+          </div>
+          <div class="form-group">
+            <label>Duration (min)</label>
+            <input type="number" id="schedDuration" value="60" min="1" max="1440">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Days</label>
+          <div class="days-selector" id="schedDays">
+            <label class="day-chip"><input type="checkbox" value="mon" checked><span>Mon</span></label>
+            <label class="day-chip"><input type="checkbox" value="tue" checked><span>Tue</span></label>
+            <label class="day-chip"><input type="checkbox" value="wed" checked><span>Wed</span></label>
+            <label class="day-chip"><input type="checkbox" value="thu" checked><span>Thu</span></label>
+            <label class="day-chip"><input type="checkbox" value="fri" checked><span>Fri</span></label>
+            <label class="day-chip"><input type="checkbox" value="sat" checked><span>Sat</span></label>
+            <label class="day-chip"><input type="checkbox" value="sun" checked><span>Sun</span></label>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-stop" id="btnCancelSchedule">Cancel</button>
+        <button class="btn btn-start" id="btnSaveSchedule">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Camera Modal -->
+  <div class="modal-overlay" id="cameraModal" style="display:none;">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="cameraModalTitle">Add Camera</h3>
+        <button class="btn-icon" id="btnCloseCameraModal"><i class="fas fa-times"></i></button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>Name</label>
+          <input type="text" id="camName" placeholder="e.g. Front Door">
+        </div>
+        <div class="form-group">
+          <label>IP Address <span class="required">*</span></label>
+          <input type="text" id="camIp" placeholder="e.g. 192.168.86.44" required>
+        </div>
+        <div class="form-group">
+          <label>Port</label>
+          <input type="number" id="camPort" value="80" min="1" max="65535">
+        </div>
+        <div class="form-group">
+          <label>Username</label>
+          <input type="text" id="camUsername" placeholder="e.g. admin">
+        </div>
+        <div class="form-group">
+          <label>Password</label>
+          <input type="password" id="camPassword" placeholder="Password">
+        </div>
+        <div class="form-group">
+          <label>Protocol</label>
+          <div class="protocol-select">
+            <label class="protocol-option">
+              <input type="radio" name="camProtocol" value="auto" checked>
+              <span>Auto</span>
+            </label>
+            <label class="protocol-option">
+              <input type="radio" name="camProtocol" value="rtsp">
+              <span>RTSP</span>
+            </label>
+            <label class="protocol-option">
+              <input type="radio" name="camProtocol" value="http">
+              <span>HTTP</span>
+            </label>
+            <label class="protocol-option">
+              <input type="radio" name="camProtocol" value="rtmp">
+              <span>RTMP</span>
+            </label>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-stop" id="btnCancelCamera">Cancel</button>
+        <button class="btn btn-start" id="btnSaveCamera">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast-container" id="toastContainer"></div>
+
+  <script src="https://vjs.zencdn.net/8.10.0/video.min.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

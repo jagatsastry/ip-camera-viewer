@@ -1,0 +1,9 @@
+node_modules/
+recordings/
+stream/
+cameras.json
+schedules.json
+*.mp4
+*.ts
+*.m3u8
+.DS_Store
