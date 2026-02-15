@@ -1,4 +1,7 @@
 const onvif = require('onvif');
+const http = require('http');
+const net = require('net');
+const config = require('../config.json');
 
 class DiscoveryManager {
   constructor() {
@@ -147,6 +150,181 @@ class DiscoveryManager {
     }
 
     return result;
+  }
+
+  /**
+   * Probe a subnet for IP cameras by checking common camera ports and HTTP endpoints.
+   * Scans the /24 subnet of the given base IP (or the defaultCameraIp from config).
+   * @param {string} baseIp - An IP on the subnet to scan (e.g. "192.168.86.44")
+   * @param {number} timeoutMs - Per-host connection timeout (default 1500ms)
+   */
+  async probePorts(baseIp, timeoutMs = 1500) {
+    const ip = baseIp || config.defaultCameraIp;
+    if (!ip) return [];
+
+    const subnet = ip.split('.').slice(0, 3).join('.');
+    const httpPorts = config.commonHttpPorts || [80, 8080, 8081];
+    const rtspPorts = config.commonRtspPorts || [554, 8554];
+    const allPorts = [...httpPorts, ...rtspPorts];
+
+    // Scan a focused range around the known IP, plus common device IPs
+    const hostsToScan = new Set();
+    const knownOctet = parseInt(ip.split('.')[3], 10);
+    // Scan +/- 10 around the known IP plus common ranges
+    for (let i = Math.max(1, knownOctet - 10); i <= Math.min(254, knownOctet + 10); i++) {
+      hostsToScan.add(`${subnet}.${i}`);
+    }
+    // Also probe common router-assigned IPs
+    for (const octet of [1, 2, 100, 101, 102, 150, 200]) {
+      hostsToScan.add(`${subnet}.${octet}`);
+    }
+
+    const found = [];
+    const scanPromises = [];
+
+    for (const host of hostsToScan) {
+      for (const port of allPorts) {
+        scanPromises.push(
+          this._probeHost(host, port, timeoutMs).then((result) => {
+            if (result) found.push(result);
+          })
+        );
+      }
+    }
+
+    await Promise.all(scanPromises);
+
+    // Deduplicate by hostname
+    const seen = new Set();
+    const unique = [];
+    for (const dev of found) {
+      if (!seen.has(dev.hostname)) {
+        seen.add(dev.hostname);
+        unique.push(dev);
+      }
+    }
+
+    return unique;
+  }
+
+  /**
+   * Check if a host:port has an open TCP connection, then try to identify the camera.
+   */
+  _probeHost(host, port, timeoutMs) {
+    return new Promise((resolve) => {
+      const socket = new net.Socket();
+      let resolved = false;
+
+      const done = (result) => {
+        if (resolved) return;
+        resolved = true;
+        socket.destroy();
+        resolve(result);
+      };
+
+      socket.setTimeout(timeoutMs);
+      socket.on('timeout', () => done(null));
+      socket.on('error', () => done(null));
+
+      socket.connect(port, host, () => {
+        // Port is open — try HTTP identification
+        if (port === 554 || port === 8554) {
+          // RTSP port open
+          done({
+            hostname: host,
+            port,
+            name: `Camera (${host})`,
+            protocol: 'rtsp',
+            source: 'probe',
+          });
+          return;
+        }
+
+        // Try HTTP GET to identify the camera
+        this._identifyHttpCamera(host, port, timeoutMs)
+          .then((info) => done(info))
+          .catch(() => done({
+            hostname: host,
+            port,
+            name: `Camera (${host})`,
+            protocol: 'http',
+            source: 'probe',
+          }));
+      });
+    });
+  }
+
+  /**
+   * Try to identify an HTTP camera by requesting known endpoints.
+   */
+  _identifyHttpCamera(host, port, timeoutMs) {
+    return new Promise((resolve, reject) => {
+      const req = http.get({
+        hostname: host,
+        port,
+        path: '/video/mjpg.cgi',
+        timeout: timeoutMs,
+      }, (res) => {
+        const contentType = res.headers['content-type'] || '';
+        res.destroy();
+
+        if (contentType.includes('multipart') || contentType.includes('image/jpeg') || contentType.includes('mjpeg')) {
+          resolve({
+            hostname: host,
+            port,
+            name: `IP Camera (${host})`,
+            protocol: 'http',
+            streamUrl: `http://${host}:${port}/video/mjpg.cgi`,
+            source: 'probe',
+          });
+        } else {
+          // Port open, HTTP responds, but not clearly a camera MJPEG endpoint
+          resolve({
+            hostname: host,
+            port,
+            name: `Device (${host})`,
+            protocol: 'http',
+            source: 'probe',
+          });
+        }
+      });
+
+      req.on('timeout', () => { req.destroy(); reject(new Error('timeout')); });
+      req.on('error', () => reject(new Error('error')));
+    });
+  }
+
+  /**
+   * Run both ONVIF discovery and port-probe scanning in parallel.
+   * Returns a combined, deduplicated list of discovered devices.
+   */
+  async discoverAll(options = {}) {
+    const { timeout = 5000, baseIp, probeTimeout = 1500 } = options;
+
+    const [onvifDevices, probedDevices] = await Promise.all([
+      this.discover(timeout),
+      this.probePorts(baseIp, probeTimeout),
+    ]);
+
+    // Merge: ONVIF results first, then probed devices not already found
+    const seen = new Set();
+    const merged = [];
+
+    for (const dev of onvifDevices) {
+      seen.add(dev.hostname);
+      dev.source = 'onvif';
+      merged.push(dev);
+    }
+
+    for (const dev of probedDevices) {
+      if (!seen.has(dev.hostname)) {
+        seen.add(dev.hostname);
+        merged.push(dev);
+      }
+    }
+
+    this._discoveredDevices = merged;
+    return merged;
   }
 
   getLastDiscoveredDevices() {

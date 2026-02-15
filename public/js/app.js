@@ -925,35 +925,41 @@
       });
   }
 
-  // ===== ONVIF Discovery =====
+  // ===== Network Discovery (ONVIF + Port Probe) =====
   function discoverCameras() {
     var btn = document.getElementById('btnDiscoverCameras');
     var resultsDiv = document.getElementById('discoveryResults');
     setButtonLoading(btn, true);
     resultsDiv.style.display = 'block';
-    resultsDiv.innerHTML = '<div class="empty-state" style="padding:16px;"><i class="fas fa-spinner fa-spin"></i><p>Scanning network for ONVIF cameras...</p></div>';
+    resultsDiv.innerHTML = '<div class="empty-state" style="padding:16px;"><i class="fas fa-spinner fa-spin"></i><p>Scanning network (ONVIF + port probe)...</p></div>';
 
     apiPost('/api/discover', { timeout: 5000 })
       .then(function (data) {
         var devices = data.devices || [];
         if (!devices.length) {
-          resultsDiv.innerHTML = '<div class="empty-state" style="padding:16px;"><i class="fas fa-search"></i><p>No ONVIF cameras found on the network</p></div>';
+          resultsDiv.innerHTML = '<div class="empty-state" style="padding:16px;"><i class="fas fa-search"></i><p>No cameras found on the network</p></div>';
           setTimeout(function () { resultsDiv.style.display = 'none'; }, 4000);
           return;
         }
 
-        var html = '<div style="padding:8px;"><div style="font-size:0.78rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;font-weight:600;padding:4px 6px;">Discovered Devices</div>';
-        devices.forEach(function (dev) {
+        var html = '<div style="padding:8px;"><div style="font-size:0.78rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;font-weight:600;padding:4px 6px;">Discovered Devices (' + devices.length + ')</div>';
+        devices.forEach(function (dev, idx) {
+          var source = dev.source || 'unknown';
+          var badge = source === 'onvif'
+            ? '<span style="background:var(--accent-blue);color:#fff;padding:1px 6px;border-radius:3px;font-size:0.65rem;font-weight:700;margin-left:6px;">ONVIF</span>'
+            : '<span style="background:var(--accent-green);color:#1a1a2e;padding:1px 6px;border-radius:3px;font-size:0.65rem;font-weight:700;margin-left:6px;">' + escapeHtml(dev.protocol || 'HTTP').toUpperCase() + '</span>';
+          var proto = dev.protocol || 'auto';
           html +=
             '<div class="camera-item">' +
             '  <div class="camera-info">' +
-            '    <div class="camera-name">' + escapeHtml(dev.name || 'ONVIF Camera') + '</div>' +
+            '    <div class="camera-name">' + escapeHtml(dev.name || 'Camera') + badge + '</div>' +
             '    <div class="camera-meta">' +
             '      <span><i class="fas fa-network-wired"></i> ' + escapeHtml(dev.hostname) + ':' + (dev.port || 80) + '</span>' +
+            (dev.streamUrl ? '<span><i class="fas fa-link"></i> ' + escapeHtml(dev.streamUrl) + '</span>' : '') +
             '    </div>' +
             '  </div>' +
             '  <div class="camera-actions">' +
-            '    <button class="btn btn-start btn-sm add-discovered-btn" data-hostname="' + escapeHtml(dev.hostname) + '" data-port="' + (dev.port || 80) + '" data-name="' + escapeHtml(dev.name || '') + '">' +
+            '    <button class="btn btn-start btn-sm add-discovered-btn" data-idx="' + idx + '" data-hostname="' + escapeHtml(dev.hostname) + '" data-port="' + (dev.port || 80) + '" data-name="' + escapeHtml(dev.name || '') + '" data-source="' + escapeHtml(source) + '" data-protocol="' + escapeHtml(proto) + '" data-stream-url="' + escapeHtml(dev.streamUrl || '') + '">' +
             '      <i class="fas fa-plus"></i> Add' +
             '    </button>' +
             '  </div>' +
@@ -966,16 +972,52 @@
           addBtn.addEventListener('click', function () {
             var hostname = this.getAttribute('data-hostname');
             var port = parseInt(this.getAttribute('data-port'), 10) || 80;
-            var name = this.getAttribute('data-name') || 'ONVIF Camera (' + hostname + ')';
-            apiPost('/api/cameras', { name: name, ip: hostname, port: port, protocol: 'auto' })
-              .then(function () {
-                toast('Camera added: ' + name, 'success');
-                fetchCameras();
-                resultsDiv.style.display = 'none';
-              })
-              .catch(function (err) {
-                toast(err.message || 'Failed to add camera', 'error');
-              });
+            var name = this.getAttribute('data-name') || 'Camera (' + hostname + ')';
+            var source = this.getAttribute('data-source');
+            var protocol = this.getAttribute('data-protocol');
+            var streamUrl = this.getAttribute('data-stream-url');
+            var btn = this;
+
+            setButtonLoading(btn, true);
+
+            if (source === 'onvif') {
+              // For ONVIF devices, try to fetch the RTSP URI first
+              apiPost('/api/discover/stream-uri', { hostname: hostname, port: port })
+                .then(function (uriData) {
+                  // Save with RTSP protocol — the camera store will use this URI
+                  return apiPost('/api/cameras', { name: name, ip: hostname, port: port, protocol: 'rtsp' });
+                })
+                .then(function () {
+                  toast('Camera added with RTSP: ' + name, 'success');
+                  fetchCameras();
+                  resultsDiv.style.display = 'none';
+                })
+                .catch(function () {
+                  // RTSP fetch failed — fall back to adding with auto protocol
+                  apiPost('/api/cameras', { name: name, ip: hostname, port: port, protocol: 'auto' })
+                    .then(function () {
+                      toast('Camera added: ' + name + ' (RTSP unavailable, using auto)', 'info');
+                      fetchCameras();
+                      resultsDiv.style.display = 'none';
+                    })
+                    .catch(function (err) {
+                      toast(err.message || 'Failed to add camera', 'error');
+                    });
+                })
+                .finally(function () { setButtonLoading(btn, false); });
+            } else {
+              // For port-probed devices, add directly with detected protocol
+              apiPost('/api/cameras', { name: name, ip: hostname, port: port, protocol: protocol || 'http' })
+                .then(function () {
+                  toast('Camera added: ' + name, 'success');
+                  fetchCameras();
+                  resultsDiv.style.display = 'none';
+                })
+                .catch(function (err) {
+                  toast(err.message || 'Failed to add camera', 'error');
+                })
+                .finally(function () { setButtonLoading(btn, false); });
+            }
           });
         });
       })

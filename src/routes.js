@@ -282,11 +282,12 @@ function createRoutes(cameraManager, recorderManager, schedulerManager, cameraSt
   // POST /api/discover - Scan the network for ONVIF cameras
   router.post('/api/discover', async (req, res) => {
     if (!discoveryManager) {
-      return res.status(501).json({ error: 'ONVIF discovery not available.' });
+      return res.status(501).json({ error: 'Discovery not available.' });
     }
     try {
-      const { timeout } = req.body;
-      const devices = await discoveryManager.discover(timeout || 5000);
+      const { timeout, baseIp } = req.body;
+      // Use discoverAll to run both ONVIF and port-probe scans
+      const devices = await discoveryManager.discoverAll({ timeout: timeout || 5000, baseIp });
       res.json({ devices });
     } catch (err) {
       res.status(500).json({ error: err.message });

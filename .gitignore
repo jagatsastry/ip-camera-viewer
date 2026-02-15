@@ -2,6 +2,7 @@ node_modules/
 recordings/
 stream/
 dist/
+test-results/
 cameras.json
 schedules.json
 *.mp4
