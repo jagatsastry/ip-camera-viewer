@@ -6,6 +6,16 @@ A self-hosted web application for viewing, recording, and managing IP camera str
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![Tests](https://img.shields.io/badge/tests-307%20passing-brightgreen)
 
+## Screenshots
+
+### Live Streaming
+
+![Live streaming view with camera feed, LIVE badge, and recordings sidebar](screenshots/live-streaming.png)
+
+### Recording Playback
+
+![Recording playback modal with video.js player controls](screenshots/recording-playback.png)
+
 ## Features
 
 - **Live Streaming** — View MJPEG, RTSP, RTMP, and HTTP camera feeds directly in the browser
