@@ -18,6 +18,7 @@ A self-hosted web application for viewing, recording, and managing IP camera str
 
 ## Features
 
+- **ONVIF Discovery** — Automatically detect cameras on your local network with one click
 - **Live Streaming** — View MJPEG, RTSP, RTMP, and HTTP camera feeds directly in the browser
 - **Recording** — Record camera streams to MP4 with one click, with optional audio capture
 - **Audio Denoising** — Real-time FFT-based noise reduction on camera audio (bandpass + noise floor filtering)
@@ -124,6 +125,14 @@ Edit `config.json` to customize the application:
 | `PUT` | `/api/cameras/:id` | Update a camera |
 | `DELETE` | `/api/cameras/:id` | Delete a camera |
 
+### ONVIF Discovery
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `POST` | `/api/discover` | Scan the local network for ONVIF cameras |
+| `POST` | `/api/discover/stream-uri` | Get RTSP stream URI from an ONVIF device |
+| `POST` | `/api/discover/device-info` | Get device info (manufacturer, model, serial) |
+
 ## Architecture
 
 ```
@@ -134,6 +143,7 @@ ip-camera-viewer/
 │   ├── recorder.js        # Recording to MP4 (video-only or video+audio)
 │   ├── scheduler.js       # Cron-like scheduled recording
 │   ├── cameras-store.js   # Camera configuration persistence
+│   ├── discovery.js       # ONVIF device discovery
 │   └── routes.js          # REST API endpoints
 ├── public/
 │   ├── index.html         # Single-page application
@@ -157,12 +167,16 @@ npm test
 
 Runs 307 tests across 7 test suites covering the camera manager, recorder, scheduler, camera store, API routes, frontend, and integration scenarios.
 
+## Privacy
+
+This application runs entirely on your local machine. No data is sent to any external server, cloud service, or third party. All camera streams, recordings, and configuration stay on your network and your disk. There is no telemetry, no analytics, and no phone-home behavior of any kind.
+
 ## Supported Cameras
 
 Tested with:
 - D-Link DCS-932LB (HTTP MJPEG)
 
-Should work with any IP camera that exposes an MJPEG, RTSP, or RTMP stream.
+Should work with any IP camera that exposes an MJPEG, RTSP, or RTMP stream. ONVIF-compatible cameras can be auto-discovered on the local network via the **Scan Network** button in the Cameras tab.
 
 ## License
 

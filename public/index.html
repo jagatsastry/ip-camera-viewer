@@ -139,10 +139,14 @@
 
       <div class="tab-panel" id="tabCameras">
         <div class="panel-header">
+          <button id="btnDiscoverCameras" class="btn btn-sm" style="background:var(--accent-blue);color:#fff;margin-right:6px;">
+            <i class="fas fa-search"></i> Scan Network
+          </button>
           <button id="btnAddCamera" class="btn btn-start btn-sm">
             <i class="fas fa-plus"></i> Add Camera
           </button>
         </div>
+        <div class="discovery-results" id="discoveryResults" style="display:none;"></div>
         <div class="cameras-list" id="camerasList">
           <div class="empty-state">
             <i class="fas fa-camera-retro"></i>

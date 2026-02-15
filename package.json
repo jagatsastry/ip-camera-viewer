@@ -6,15 +6,20 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
-    "test": "jest --detectOpenHandles --forceExit"
+    "test": "jest --detectOpenHandles --forceExit",
+    "electron": "electron electron/main.js",
+    "electron:build": "electron-builder"
   },
   "dependencies": {
     "express": "^4.18.2",
     "fluent-ffmpeg": "^2.1.2",
+    "onvif": "^0.8.1",
     "uuid": "^9.0.0",
     "ws": "^8.16.0"
   },
   "devDependencies": {
+    "electron": "^33.4.11",
+    "electron-builder": "^25.1.8",
     "jest": "^29.7.0",
     "jest-environment-jsdom": "^30.2.0",
     "supertest": "^6.3.3"
@@ -24,5 +29,26 @@
     "testMatch": [
       "**/tests/**/*.test.js"
     ]
+  },
+  "build": {
+    "appId": "com.ip-camera-app.viewer",
+    "productName": "IP Camera Viewer",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "electron/**/*",
+      "src/**/*",
+      "public/**/*",
+      "config.json",
+      "node_modules/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.utilities",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    }
   }
 }

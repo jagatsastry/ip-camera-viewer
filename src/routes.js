@@ -4,7 +4,7 @@ const http = require('http');
 const https = require('https');
 const { spawn } = require('child_process');
 
-function createRoutes(cameraManager, recorderManager, schedulerManager, cameraStore) {
+function createRoutes(cameraManager, recorderManager, schedulerManager, cameraStore, discoveryManager) {
   const router = express.Router();
 
   // MJPEG proxy - pipes the camera's MJPEG stream to the browser
@@ -274,6 +274,56 @@ function createRoutes(cameraManager, recorderManager, schedulerManager, cameraSt
     } catch (err) {
       const status = err.message === 'Camera not found.' ? 404 : 500;
       res.status(status).json({ error: err.message });
+    }
+  });
+
+  // ===== ONVIF Discovery Routes =====
+
+  // POST /api/discover - Scan the network for ONVIF cameras
+  router.post('/api/discover', async (req, res) => {
+    if (!discoveryManager) {
+      return res.status(501).json({ error: 'ONVIF discovery not available.' });
+    }
+    try {
+      const { timeout } = req.body;
+      const devices = await discoveryManager.discover(timeout || 5000);
+      res.json({ devices });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // POST /api/discover/stream-uri - Get RTSP stream URI from an ONVIF device
+  router.post('/api/discover/stream-uri', async (req, res) => {
+    if (!discoveryManager) {
+      return res.status(501).json({ error: 'ONVIF discovery not available.' });
+    }
+    try {
+      const { hostname, port, username, password } = req.body;
+      if (!hostname) {
+        return res.status(400).json({ error: 'hostname is required.' });
+      }
+      const result = await discoveryManager.getStreamUri(hostname, port, username, password);
+      res.json(result);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // POST /api/discover/device-info - Get device information from an ONVIF device
+  router.post('/api/discover/device-info', async (req, res) => {
+    if (!discoveryManager) {
+      return res.status(501).json({ error: 'ONVIF discovery not available.' });
+    }
+    try {
+      const { hostname, port, username, password } = req.body;
+      if (!hostname) {
+        return res.status(400).json({ error: 'hostname is required.' });
+      }
+      const result = await discoveryManager.getDeviceInfo(hostname, port, username, password);
+      res.json(result);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
     }
   });
 

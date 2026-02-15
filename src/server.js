@@ -7,6 +7,7 @@ const CameraManager = require('./camera');
 const RecorderManager = require('./recorder');
 const SchedulerManager = require('./scheduler');
 const CameraStore = require('./cameras-store');
+const DiscoveryManager = require('./discovery');
 const createRoutes = require('./routes');
 
 const app = express();
@@ -37,9 +38,20 @@ const cameraManager = new CameraManager();
 const recorderManager = new RecorderManager();
 const schedulerManager = new SchedulerManager(recorderManager);
 const cameraStore = new CameraStore();
+const discoveryManager = new DiscoveryManager();
+
+// Seed default camera if store is empty
+if (config.defaultCameraIp && cameraStore.listCameras().length === 0) {
+  cameraStore.addCamera({
+    name: 'Default Camera',
+    ip: config.defaultCameraIp,
+    port: 80,
+    protocol: 'http',
+  });
+}
 
 // Mount API routes
-app.use(createRoutes(cameraManager, recorderManager, schedulerManager, cameraStore));
+app.use(createRoutes(cameraManager, recorderManager, schedulerManager, cameraStore, discoveryManager));
 
 // Handle JSON parse errors gracefully
 app.use((err, req, res, next) => {
@@ -54,6 +66,7 @@ app.cameraManager = cameraManager;
 app.recorderManager = recorderManager;
 app.schedulerManager = schedulerManager;
 app.cameraStore = cameraStore;
+app.discoveryManager = discoveryManager;
 
 // WebSocket server for real-time status updates
 const wss = new WebSocketServer({ server });
@@ -104,4 +117,4 @@ schedulerManager.on('schedule_error', (data) => {
   broadcast({ type: 'schedule_error', ...data });
 });
 
-module.exports = { app, server, wss, cameraManager, recorderManager, schedulerManager, cameraStore };
+module.exports = { app, server, wss, cameraManager, recorderManager, schedulerManager, cameraStore, discoveryManager };

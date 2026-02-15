@@ -361,6 +361,10 @@
     document.getElementById('cameraModal').addEventListener('click', function (e) {
       if (e.target === this) closeCameraModal();
     });
+
+    // ONVIF Discovery
+    var btnDiscover = document.getElementById('btnDiscoverCameras');
+    if (btnDiscover) btnDiscover.addEventListener('click', discoverCameras);
   }
 
   // ===== Stream Actions =====
@@ -918,6 +922,68 @@
       })
       .catch(function (err) {
         toast(err.message || 'Failed to delete camera', 'error');
+      });
+  }
+
+  // ===== ONVIF Discovery =====
+  function discoverCameras() {
+    var btn = document.getElementById('btnDiscoverCameras');
+    var resultsDiv = document.getElementById('discoveryResults');
+    setButtonLoading(btn, true);
+    resultsDiv.style.display = 'block';
+    resultsDiv.innerHTML = '<div class="empty-state" style="padding:16px;"><i class="fas fa-spinner fa-spin"></i><p>Scanning network for ONVIF cameras...</p></div>';
+
+    apiPost('/api/discover', { timeout: 5000 })
+      .then(function (data) {
+        var devices = data.devices || [];
+        if (!devices.length) {
+          resultsDiv.innerHTML = '<div class="empty-state" style="padding:16px;"><i class="fas fa-search"></i><p>No ONVIF cameras found on the network</p></div>';
+          setTimeout(function () { resultsDiv.style.display = 'none'; }, 4000);
+          return;
+        }
+
+        var html = '<div style="padding:8px;"><div style="font-size:0.78rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;font-weight:600;padding:4px 6px;">Discovered Devices</div>';
+        devices.forEach(function (dev) {
+          html +=
+            '<div class="camera-item">' +
+            '  <div class="camera-info">' +
+            '    <div class="camera-name">' + escapeHtml(dev.name || 'ONVIF Camera') + '</div>' +
+            '    <div class="camera-meta">' +
+            '      <span><i class="fas fa-network-wired"></i> ' + escapeHtml(dev.hostname) + ':' + (dev.port || 80) + '</span>' +
+            '    </div>' +
+            '  </div>' +
+            '  <div class="camera-actions">' +
+            '    <button class="btn btn-start btn-sm add-discovered-btn" data-hostname="' + escapeHtml(dev.hostname) + '" data-port="' + (dev.port || 80) + '" data-name="' + escapeHtml(dev.name || '') + '">' +
+            '      <i class="fas fa-plus"></i> Add' +
+            '    </button>' +
+            '  </div>' +
+            '</div>';
+        });
+        html += '</div>';
+        resultsDiv.innerHTML = html;
+
+        resultsDiv.querySelectorAll('.add-discovered-btn').forEach(function (addBtn) {
+          addBtn.addEventListener('click', function () {
+            var hostname = this.getAttribute('data-hostname');
+            var port = parseInt(this.getAttribute('data-port'), 10) || 80;
+            var name = this.getAttribute('data-name') || 'ONVIF Camera (' + hostname + ')';
+            apiPost('/api/cameras', { name: name, ip: hostname, port: port, protocol: 'auto' })
+              .then(function () {
+                toast('Camera added: ' + name, 'success');
+                fetchCameras();
+                resultsDiv.style.display = 'none';
+              })
+              .catch(function (err) {
+                toast(err.message || 'Failed to add camera', 'error');
+              });
+          });
+        });
+      })
+      .catch(function (err) {
+        resultsDiv.innerHTML = '<div class="empty-state" style="padding:16px;"><i class="fas fa-exclamation-circle"></i><p>' + escapeHtml(err.message || 'Discovery failed') + '</p></div>';
+      })
+      .finally(function () {
+        setButtonLoading(btn, false);
       });
   }
 
