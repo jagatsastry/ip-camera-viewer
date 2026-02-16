@@ -4,7 +4,7 @@ A self-hosted web application and macOS desktop app for viewing, recording, and 
 
 ![Node.js](https://img.shields.io/badge/node-%3E%3D18-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
-![Tests](https://img.shields.io/badge/tests-496%2B%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-520%2B%20passing-brightgreen)
 
 ## Screenshots
 
@@ -23,6 +23,7 @@ A self-hosted web application and macOS desktop app for viewing, recording, and 
 - **Recording** — Record camera streams to MP4 with one click, with optional audio capture
 - **Audio Denoising** — Real-time FFT-based noise reduction on camera audio (bandpass + noise floor filtering)
 - **Scheduled Recording** — Set up recurring recording schedules by day of week and time
+- **Multi-Camera Grid View** — Watch all saved cameras simultaneously in an auto-adjusting grid layout
 - **Multi-Camera Management** — Save and switch between multiple camera configurations
 - **Real-Time Status** — WebSocket-based live updates for stream and recording state
 - **Recording Playback** — Browse, play, download, and delete recordings from the web UI
@@ -102,6 +103,19 @@ Switch to the **Cameras** tab and click **Scan Network**. The app runs two disco
 2. **Port Probe** — Scans your subnet for common camera ports (80, 8080, 554, etc.) and identifies the camera brand by trying known HTTP endpoints from the fingerprint database.
 
 Discovered devices show a badge indicating how they were found (ONVIF or HTTP/RTSP).
+
+### Multi-Camera Grid View
+
+Click the **Grid** button in the view-mode bar to switch to grid view. Add cameras to the grid by clicking the grid icon on any saved camera in the **Cameras** tab. The grid auto-adjusts its layout based on camera count:
+
+| Cameras | Grid Layout |
+|---|---|
+| 1 | Full width |
+| 2–4 | 2 columns |
+| 5–9 | 3 columns |
+| 10+ | 4 columns |
+
+Each tile shows a live MJPEG stream proxied through the server. Hover over a tile to reveal controls for removing it from the grid or starting a recording. Switch back to single view at any time with the **Single** button.
 
 ### Saving Cameras
 
@@ -229,7 +243,8 @@ Edit `config.json` to customize the web server:
 |---|---|---|
 | `POST` | `/api/stream/start` | Start streaming from a camera URL |
 | `POST` | `/api/stream/stop` | Stop the active stream |
-| `GET` | `/api/stream/mjpeg` | MJPEG proxy endpoint (pipe to `<img>`) |
+| `GET` | `/api/stream/mjpeg` | MJPEG proxy for the active stream (pipe to `<img>`) |
+| `GET` | `/api/stream/mjpeg/:cameraId` | MJPEG proxy for a saved camera by ID (used by grid view) |
 | `GET` | `/api/stream/audio` | Denoised audio proxy (MP3) |
 | `GET` | `/api/status` | Get camera and recorder status |
 
@@ -300,13 +315,13 @@ ip-camera-viewer/
 │   └── fake-camera.sh     # Simple fake camera (bash)
 ├── config.json            # Application settings
 └── tests/
-    ├── *.test.js           # Jest unit + integration tests (357 tests)
-    └── e2e/                # Playwright Electron E2E tests (139 tests)
+    ├── *.test.js           # Jest unit + integration tests (381 tests)
+    └── e2e/                # Playwright E2E tests (Electron + grid view)
 ```
 
 ### How Streaming Works
 
-- **MJPEG cameras** (most common for home IP cameras): The server proxies the raw MJPEG stream directly to the browser via an `<img>` tag. No transcoding required.
+- **MJPEG cameras** (most common for home IP cameras): The server proxies the raw MJPEG stream directly to the browser via an `<img>` tag. No transcoding required. In grid view, each camera gets its own stateless proxy connection via `/api/stream/mjpeg/:cameraId`.
 - **RTSP/RTMP cameras**: FFmpeg transcodes the stream into HLS segments, served as static files.
 - **Audio**: Camera audio is fetched from `/audio.cgi`, passed through FFmpeg's `afftdn` denoiser with a 200Hz-3kHz bandpass filter, and streamed as MP3.
 
@@ -335,7 +350,7 @@ The desktop app is a native Electron wrapper around the web server:
 npm test
 ```
 
-Covers camera manager, recorder, scheduler, camera store, API routes, frontend DOM, discovery, and fingerprint database. 357 tests across 8 test suites.
+Covers camera manager, recorder, scheduler, camera store, API routes, frontend DOM (including grid view), discovery, and fingerprint database. 381 tests across 8 test suites.
 
 ### E2E Tests (Playwright + Electron)
 
@@ -343,7 +358,7 @@ Covers camera manager, recorder, scheduler, camera store, API routes, frontend D
 npm run test:e2e
 ```
 
-139 tests that launch the actual Electron app and interact with every UI element — streaming controls, recording, tabs, modals, schedules, cameras, playback, toasts, WebSocket status, CSS theme, input validation, and full integration flows.
+139+ tests that launch the actual Electron app and interact with every UI element — streaming controls, recording, tabs, modals, schedules, cameras, playback, toasts, WebSocket status, CSS theme, input validation, grid view, and full integration flows.
 
 ### Fake Camera Server
 
