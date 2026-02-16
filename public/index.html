@@ -24,6 +24,19 @@
 
   <main class="app-main">
     <section class="player-section">
+      <!-- View Mode Toggle -->
+      <div class="view-mode-bar">
+        <button class="view-mode-btn active" id="btnSingleView" title="Single View">
+          <i class="fas fa-expand"></i> Single
+        </button>
+        <button class="view-mode-btn" id="btnGridView" title="Grid View">
+          <i class="fas fa-th"></i> Grid
+          <span class="grid-camera-count" id="gridCameraCount"></span>
+        </button>
+      </div>
+
+      <!-- Single View Container -->
+      <div id="singleViewContainer">
       <!-- Live Stream Area (always visible) -->
       <div class="video-container" id="liveStreamContainer">
         <div class="stream-label"><i class="fas fa-circle live-dot"></i> LIVE</div>
@@ -98,6 +111,17 @@
               <span>Stop Rec</span>
             </button>
           </div>
+        </div>
+      </div>
+      </div><!-- /singleViewContainer -->
+
+      <!-- Grid View Container (hidden by default) -->
+      <div id="gridViewContainer" style="display:none;">
+        <div id="cameraGrid" class="camera-grid"></div>
+        <div class="grid-empty-state" id="gridEmptyState">
+          <i class="fas fa-th"></i>
+          <p>No cameras in grid</p>
+          <p class="grid-empty-hint">Click the <i class="fas fa-th"></i> button on a saved camera to add it</p>
         </div>
       </div>
     </section>

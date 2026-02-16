@@ -26,19 +26,27 @@ class DiscoveryManager {
         }
       }, timeoutMs);
 
-      onvif.Discovery.probe({ timeout: timeoutMs }, (err, devices) => {
+      try {
+        onvif.Discovery.probe({ timeout: timeoutMs }, (err, devices) => {
+          clearTimeout(timer);
+          if (resolved) return;
+          resolved = true;
+
+          if (err || !devices) {
+            resolve([]);
+            return;
+          }
+
+          this._discoveredDevices = devices.map((device) => this._parseDevice(device));
+          resolve(this._discoveredDevices);
+        });
+      } catch (_probeErr) {
         clearTimeout(timer);
-        if (resolved) return;
-        resolved = true;
-
-        if (err || !devices) {
+        if (!resolved) {
+          resolved = true;
           resolve([]);
-          return;
         }
-
-        this._discoveredDevices = devices.map((device) => this._parseDevice(device));
-        resolve(this._discoveredDevices);
-      });
+      }
     });
   }
 

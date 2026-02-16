@@ -22,6 +22,16 @@ describe('Frontend App', () => {
       </header>
       <main class="app-main">
         <section class="player-section">
+          <div class="view-mode-bar">
+            <button class="view-mode-btn active" id="btnSingleView" title="Single View">
+              <i class="fas fa-expand"></i> Single
+            </button>
+            <button class="view-mode-btn" id="btnGridView" title="Grid View">
+              <i class="fas fa-th"></i> Grid
+              <span class="grid-camera-count" id="gridCameraCount"></span>
+            </button>
+          </div>
+          <div id="singleViewContainer">
           <div class="video-container" id="liveStreamContainer">
             <div class="stream-label"><i class="fas fa-circle live-dot"></i> LIVE</div>
             <img id="mjpegPlayer" class="mjpeg-player" style="display:none;" alt="Camera Stream">
@@ -73,6 +83,14 @@ describe('Frontend App', () => {
                 <button id="btnStartRecord" class="btn btn-record"><i class="fas fa-circle"></i><span>Record</span></button>
                 <button id="btnStopRecord" class="btn btn-stop-record" disabled><i class="fas fa-square"></i><span>Stop Rec</span></button>
               </div>
+            </div>
+          </div>
+          </div><!-- /singleViewContainer -->
+          <div id="gridViewContainer" style="display:none;">
+            <div id="cameraGrid" class="camera-grid"></div>
+            <div class="grid-empty-state" id="gridEmptyState" style="display:flex;">
+              <i class="fas fa-th"></i>
+              <p>No cameras in grid</p>
             </div>
           </div>
         </section>
@@ -246,7 +264,10 @@ describe('Frontend App', () => {
       return Promise.resolve({
         ok: status >= 200 && status < 300,
         status,
+        statusText: status === 200 ? 'OK' : 'Error',
+        headers: { get: (name) => name.toLowerCase() === 'content-type' ? 'application/json; charset=utf-8' : null },
         json: () => Promise.resolve(response),
+        text: () => Promise.resolve(JSON.stringify(response)),
       });
     });
     window.fetch = fetchMock;
@@ -1117,6 +1138,443 @@ describe('Frontend App', () => {
       // Stream buttons should remain unchanged
       expect(document.getElementById('btnStartStream').disabled).toBe(true);
       expect(document.getElementById('btnStopStream').disabled).toBe(false);
+    });
+  });
+
+  // =================== Grid View Tests ===================
+
+  describe('Grid View', () => {
+    it('should show single view by default', async () => {
+      await jest.advanceTimersByTimeAsync(200);
+
+      const singleView = document.getElementById('singleViewContainer');
+      const gridView = document.getElementById('gridViewContainer');
+      expect(singleView.style.display).not.toBe('none');
+      expect(gridView.style.display).toBe('none');
+    });
+
+    it('should show Single button as active by default', async () => {
+      await jest.advanceTimersByTimeAsync(200);
+
+      const btnSingle = document.getElementById('btnSingleView');
+      const btnGrid = document.getElementById('btnGridView');
+      expect(btnSingle.classList.contains('active')).toBe(true);
+      expect(btnGrid.classList.contains('active')).toBe(false);
+    });
+
+    it('should switch to grid view on Grid button click', async () => {
+      await jest.advanceTimersByTimeAsync(200);
+
+      document.getElementById('btnGridView').click();
+
+      const singleView = document.getElementById('singleViewContainer');
+      const gridView = document.getElementById('gridViewContainer');
+      expect(singleView.style.display).toBe('none');
+      expect(gridView.style.display).toBe('block');
+      expect(document.getElementById('btnGridView').classList.contains('active')).toBe(true);
+      expect(document.getElementById('btnSingleView').classList.contains('active')).toBe(false);
+    });
+
+    it('should switch back to single view on Single button click', async () => {
+      await jest.advanceTimersByTimeAsync(200);
+
+      // Go to grid view first
+      document.getElementById('btnGridView').click();
+      // Then back to single
+      document.getElementById('btnSingleView').click();
+
+      const singleView = document.getElementById('singleViewContainer');
+      const gridView = document.getElementById('gridViewContainer');
+      expect(singleView.style.display).toBe('block');
+      expect(gridView.style.display).toBe('none');
+      expect(document.getElementById('btnSingleView').classList.contains('active')).toBe(true);
+      expect(document.getElementById('btnGridView').classList.contains('active')).toBe(false);
+    });
+
+    it('should show empty state when no cameras in grid', async () => {
+      await jest.advanceTimersByTimeAsync(200);
+
+      document.getElementById('btnGridView').click();
+
+      const emptyState = document.getElementById('gridEmptyState');
+      expect(emptyState.style.display).toBe('flex');
+    });
+
+    it('should add camera tile to grid from cameras tab', async () => {
+      await jest.advanceTimersByTimeAsync(200);
+
+      // Mock cameras API
+      mockFetch({
+        '/api/cameras': {
+          cameras: [
+            { id: 'cam-1', name: 'Front Door', ip: '192.168.1.50', port: 80, username: '', password: '', protocol: 'http' },
+          ],
+        },
+      });
+
+      // Switch to cameras tab
+      document.querySelector('.tab-btn[data-tab="cameras"]').click();
+      await jest.advanceTimersByTimeAsync(200);
+
+      // Click the grid add button
+      const gridBtn = document.querySelector('.grid-add-btn');
+      expect(gridBtn).not.toBeNull();
+      gridBtn.click();
+      await jest.advanceTimersByTimeAsync(200);
+
+      // Should be in grid view now (auto-switch on first add)
+      const gridView = document.getElementById('gridViewContainer');
+      expect(gridView.style.display).toBe('block');
+
+      // Grid should have one tile
+      const tiles = document.querySelectorAll('#cameraGrid .grid-tile');
+      expect(tiles.length).toBe(1);
+
+      // Tile should have correct camera name
+      const tileHeader = tiles[0].querySelector('.grid-tile-header span');
+      expect(tileHeader.textContent).toBe('Front Door');
+    });
+
+    it('should set correct img src on grid tile', async () => {
+      await jest.advanceTimersByTimeAsync(200);
+
+      mockFetch({
+        '/api/cameras': {
+          cameras: [
+            { id: 'cam-1', name: 'Test', ip: '192.168.1.1', port: 80, protocol: 'http' },
+          ],
+        },
+      });
+
+      document.querySelector('.tab-btn[data-tab="cameras"]').click();
+      await jest.advanceTimersByTimeAsync(200);
+
+      document.querySelector('.grid-add-btn').click();
+      await jest.advanceTimersByTimeAsync(200);
+
+      const img = document.querySelector('#cameraGrid .grid-tile img');
+      expect(img).not.toBeNull();
+      expect(img.src).toContain('/api/stream/mjpeg/cam-1');
+    });
+
+    it('should remove camera tile from grid', async () => {
+      await jest.advanceTimersByTimeAsync(200);
+
+      mockFetch({
+        '/api/cameras': {
+          cameras: [
+            { id: 'cam-1', name: 'Test', ip: '192.168.1.1', port: 80, protocol: 'http' },
+          ],
+        },
+      });
+
+      document.querySelector('.tab-btn[data-tab="cameras"]').click();
+      await jest.advanceTimersByTimeAsync(200);
+
+      // Add to grid
+      document.querySelector('.grid-add-btn').click();
+      await jest.advanceTimersByTimeAsync(200);
+
+      // Should have 1 tile
+      expect(document.querySelectorAll('#cameraGrid .grid-tile').length).toBe(1);
+
+      // Click remove button on the tile
+      const removeBtn = document.querySelector('.grid-tile-actions button[title="Remove from grid"]');
+      expect(removeBtn).not.toBeNull();
+      removeBtn.click();
+      await jest.advanceTimersByTimeAsync(200);
+
+      // Grid should be empty
+      expect(document.querySelectorAll('#cameraGrid .grid-tile').length).toBe(0);
+    });
+
+    it('should not add duplicate cameras to grid', async () => {
+      await jest.advanceTimersByTimeAsync(200);
+
+      mockFetch({
+        '/api/cameras': {
+          cameras: [
+            { id: 'cam-1', name: 'Test', ip: '192.168.1.1', port: 80, protocol: 'http' },
+          ],
+        },
+      });
+
+      document.querySelector('.tab-btn[data-tab="cameras"]').click();
+      await jest.advanceTimersByTimeAsync(200);
+
+      // Click grid add twice
+      document.querySelector('.grid-add-btn').click();
+      await jest.advanceTimersByTimeAsync(200);
+      document.querySelector('.grid-add-btn').click();
+      await jest.advanceTimersByTimeAsync(200);
+
+      // Should still have only 1 tile
+      expect(document.querySelectorAll('#cameraGrid .grid-tile').length).toBe(1);
+    });
+
+    it('should use correct grid columns for 1 camera', async () => {
+      await jest.advanceTimersByTimeAsync(200);
+
+      mockFetch({
+        '/api/cameras': {
+          cameras: [
+            { id: 'cam-1', name: 'Cam 1', ip: '192.168.1.1', port: 80, protocol: 'http' },
+          ],
+        },
+      });
+
+      document.querySelector('.tab-btn[data-tab="cameras"]').click();
+      await jest.advanceTimersByTimeAsync(200);
+      document.querySelector('.grid-add-btn').click();
+      await jest.advanceTimersByTimeAsync(200);
+
+      const grid = document.getElementById('cameraGrid');
+      expect(grid.style.gridTemplateColumns).toBe('repeat(1, 1fr)');
+    });
+
+    it('should use correct grid columns for 2 cameras', async () => {
+      await jest.advanceTimersByTimeAsync(200);
+
+      mockFetch({
+        '/api/cameras': {
+          cameras: [
+            { id: 'cam-1', name: 'Cam 1', ip: '192.168.1.1', port: 80, protocol: 'http' },
+            { id: 'cam-2', name: 'Cam 2', ip: '192.168.1.2', port: 80, protocol: 'http' },
+          ],
+        },
+      });
+
+      document.querySelector('.tab-btn[data-tab="cameras"]').click();
+      await jest.advanceTimersByTimeAsync(200);
+
+      // Add both cameras
+      var btns = document.querySelectorAll('.grid-add-btn');
+      btns[0].click();
+      await jest.advanceTimersByTimeAsync(100);
+      btns[1].click();
+      await jest.advanceTimersByTimeAsync(100);
+
+      const grid = document.getElementById('cameraGrid');
+      expect(grid.style.gridTemplateColumns).toBe('repeat(2, 1fr)');
+    });
+
+    it('should use correct grid columns for 4 cameras', async () => {
+      await jest.advanceTimersByTimeAsync(200);
+
+      var cams = [];
+      for (var i = 1; i <= 4; i++) {
+        cams.push({ id: 'cam-' + i, name: 'Cam ' + i, ip: '192.168.1.' + i, port: 80, protocol: 'http' });
+      }
+      mockFetch({ '/api/cameras': { cameras: cams } });
+
+      document.querySelector('.tab-btn[data-tab="cameras"]').click();
+      await jest.advanceTimersByTimeAsync(200);
+
+      var btns = document.querySelectorAll('.grid-add-btn');
+      for (var j = 0; j < btns.length; j++) {
+        btns[j].click();
+        await jest.advanceTimersByTimeAsync(50);
+      }
+
+      const grid = document.getElementById('cameraGrid');
+      expect(grid.style.gridTemplateColumns).toBe('repeat(2, 1fr)');
+    });
+
+    it('should use correct grid columns for 9 cameras', async () => {
+      await jest.advanceTimersByTimeAsync(200);
+
+      var cams = [];
+      for (var i = 1; i <= 9; i++) {
+        cams.push({ id: 'cam-' + i, name: 'Cam ' + i, ip: '192.168.1.' + i, port: 80, protocol: 'http' });
+      }
+      mockFetch({ '/api/cameras': { cameras: cams } });
+
+      document.querySelector('.tab-btn[data-tab="cameras"]').click();
+      await jest.advanceTimersByTimeAsync(200);
+
+      var btns = document.querySelectorAll('.grid-add-btn');
+      for (var j = 0; j < btns.length; j++) {
+        btns[j].click();
+        await jest.advanceTimersByTimeAsync(50);
+      }
+
+      const grid = document.getElementById('cameraGrid');
+      expect(grid.style.gridTemplateColumns).toBe('repeat(3, 1fr)');
+    });
+
+    it('should update camera count label', async () => {
+      await jest.advanceTimersByTimeAsync(200);
+
+      mockFetch({
+        '/api/cameras': {
+          cameras: [
+            { id: 'cam-1', name: 'Cam 1', ip: '192.168.1.1', port: 80, protocol: 'http' },
+            { id: 'cam-2', name: 'Cam 2', ip: '192.168.1.2', port: 80, protocol: 'http' },
+          ],
+        },
+      });
+
+      document.querySelector('.tab-btn[data-tab="cameras"]').click();
+      await jest.advanceTimersByTimeAsync(200);
+
+      var btns = document.querySelectorAll('.grid-add-btn');
+      btns[0].click();
+      await jest.advanceTimersByTimeAsync(100);
+
+      expect(document.getElementById('gridCameraCount').textContent).toBe('1');
+
+      btns[1].click();
+      await jest.advanceTimersByTimeAsync(100);
+
+      expect(document.getElementById('gridCameraCount').textContent).toBe('2');
+    });
+
+    it('should auto-switch to grid view on first camera add', async () => {
+      await jest.advanceTimersByTimeAsync(200);
+
+      // Should start in single view
+      expect(document.getElementById('singleViewContainer').style.display).not.toBe('none');
+      expect(document.getElementById('gridViewContainer').style.display).toBe('none');
+
+      mockFetch({
+        '/api/cameras': {
+          cameras: [
+            { id: 'cam-1', name: 'Cam 1', ip: '192.168.1.1', port: 80, protocol: 'http' },
+          ],
+        },
+      });
+
+      document.querySelector('.tab-btn[data-tab="cameras"]').click();
+      await jest.advanceTimersByTimeAsync(200);
+
+      document.querySelector('.grid-add-btn').click();
+      await jest.advanceTimersByTimeAsync(200);
+
+      // Should have auto-switched to grid view
+      expect(document.getElementById('singleViewContainer').style.display).toBe('none');
+      expect(document.getElementById('gridViewContainer').style.display).toBe('block');
+    });
+
+    it('should hide grid empty state when cameras are added', async () => {
+      await jest.advanceTimersByTimeAsync(200);
+
+      mockFetch({
+        '/api/cameras': {
+          cameras: [
+            { id: 'cam-1', name: 'Test', ip: '192.168.1.1', port: 80, protocol: 'http' },
+          ],
+        },
+      });
+
+      document.querySelector('.tab-btn[data-tab="cameras"]').click();
+      await jest.advanceTimersByTimeAsync(200);
+
+      document.querySelector('.grid-add-btn').click();
+      await jest.advanceTimersByTimeAsync(200);
+
+      // Empty state should be hidden, grid should be visible
+      expect(document.getElementById('gridEmptyState').style.display).toBe('none');
+      expect(document.getElementById('cameraGrid').style.display).toBe('grid');
+    });
+
+    it('should show grid empty state when all cameras are removed', async () => {
+      await jest.advanceTimersByTimeAsync(200);
+
+      mockFetch({
+        '/api/cameras': {
+          cameras: [
+            { id: 'cam-1', name: 'Test', ip: '192.168.1.1', port: 80, protocol: 'http' },
+          ],
+        },
+      });
+
+      document.querySelector('.tab-btn[data-tab="cameras"]').click();
+      await jest.advanceTimersByTimeAsync(200);
+
+      document.querySelector('.grid-add-btn').click();
+      await jest.advanceTimersByTimeAsync(200);
+
+      // Remove the camera
+      const removeBtn = document.querySelector('.grid-tile-actions button[title="Remove from grid"]');
+      removeBtn.click();
+      await jest.advanceTimersByTimeAsync(200);
+
+      // Empty state should be visible again
+      expect(document.getElementById('gridEmptyState').style.display).toBe('flex');
+    });
+
+    it('should clear img src when removing camera from grid', async () => {
+      await jest.advanceTimersByTimeAsync(200);
+
+      mockFetch({
+        '/api/cameras': {
+          cameras: [
+            { id: 'cam-1', name: 'Test', ip: '192.168.1.1', port: 80, protocol: 'http' },
+          ],
+        },
+      });
+
+      document.querySelector('.tab-btn[data-tab="cameras"]').click();
+      await jest.advanceTimersByTimeAsync(200);
+      document.querySelector('.grid-add-btn').click();
+      await jest.advanceTimersByTimeAsync(200);
+
+      // Grab the img before removal
+      const img = document.querySelector('#cameraGrid .grid-tile img');
+      expect(img).not.toBeNull();
+      expect(img.src).toContain('/api/stream/mjpeg/cam-1');
+
+      // Remove - the tile is removed from DOM, src was cleared
+      const removeBtn = document.querySelector('.grid-tile-actions button[title="Remove from grid"]');
+      removeBtn.click();
+      await jest.advanceTimersByTimeAsync(200);
+
+      // Tile should no longer be in the DOM
+      expect(document.querySelectorAll('#cameraGrid .grid-tile').length).toBe(0);
+    });
+  });
+
+  describe('API Response Handling', () => {
+    it('should handle non-JSON responses gracefully', async () => {
+      // Simulate a response with HTML content-type (like the scan network bug)
+      window.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        headers: { get: () => 'text/html; charset=utf-8' },
+        text: () => Promise.resolve('<!DOCTYPE html><html><body>Not JSON</body></html>'),
+        json: () => Promise.reject(new SyntaxError("Unexpected token '<'")),
+      });
+
+      // Trigger a fetch that uses handleResponse — clicking discover will do it
+      const btn = document.getElementById('btnDiscoverCameras');
+      const resultsDiv = document.getElementById('discoveryResults');
+      if (btn && resultsDiv) {
+        btn.click();
+        await jest.advanceTimersByTimeAsync(500);
+        // Should show a user-friendly error, not a raw JSON parse error
+        const text = resultsDiv.textContent || '';
+        expect(text).not.toContain("Unexpected token '<'");
+        expect(text).toContain('non-JSON');
+      }
+    });
+
+    it('should parse JSON from text when content-type header is missing', async () => {
+      window.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        headers: { get: () => null },
+        text: () => Promise.resolve('{"cameras":[]}'),
+        json: () => Promise.resolve({ cameras: [] }),
+      });
+
+      const btn = document.querySelector('.tab-btn[data-tab="cameras"]');
+      if (btn) {
+        btn.click();
+        await jest.advanceTimersByTimeAsync(500);
+        // Should not throw — falls back to text() + JSON.parse()
+      }
     });
   });
 });

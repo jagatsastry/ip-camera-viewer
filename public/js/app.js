@@ -25,6 +25,14 @@
     btnToggleMute: document.getElementById('btnToggleMute'),
     muteIcon: document.getElementById('muteIcon'),
     volumeSlider: document.getElementById('volumeSlider'),
+    // Grid view elements
+    btnSingleView: document.getElementById('btnSingleView'),
+    btnGridView: document.getElementById('btnGridView'),
+    singleViewContainer: document.getElementById('singleViewContainer'),
+    gridViewContainer: document.getElementById('gridViewContainer'),
+    cameraGrid: document.getElementById('cameraGrid'),
+    gridCameraCount: document.getElementById('gridCameraCount'),
+    gridEmptyState: document.getElementById('gridEmptyState'),
   };
 
   // ===== State =====
@@ -38,6 +46,11 @@
   var wsReconnectTimeout = null;
   var isMuted = false;
   var audioVolume = 0.75;
+
+  // Grid view state
+  var gridCameras = {};  // { cameraId: { camera, tileEl } }
+  var isGridView = false;
+  var gridRecordingCameraId = null;
 
   // ===== Initialization =====
   function init() {
@@ -365,6 +378,10 @@
     // ONVIF Discovery
     var btnDiscover = document.getElementById('btnDiscoverCameras');
     if (btnDiscover) btnDiscover.addEventListener('click', discoverCameras);
+
+    // Grid view toggles
+    if (els.btnSingleView) els.btnSingleView.addEventListener('click', switchToSingleView);
+    if (els.btnGridView) els.btnGridView.addEventListener('click', switchToGridView);
   }
 
   // ===== Stream Actions =====
@@ -575,6 +592,19 @@
   }
 
   function handleResponse(res) {
+    var contentType = res.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+      if (!res.ok) {
+        throw new Error('Server returned ' + res.status + ' (' + res.statusText + ')');
+      }
+      return res.text().then(function (text) {
+        try {
+          return JSON.parse(text);
+        } catch (_e) {
+          throw new Error('Server returned non-JSON response (status ' + res.status + ')');
+        }
+      });
+    }
     return res.json().then(function (data) {
       if (!res.ok) {
         throw new Error(data.error || data.message || 'Request failed');
@@ -796,6 +826,7 @@
         '    </div>' +
         '  </div>' +
         '  <div class="camera-actions">' +
+        '    <button class="btn-icon grid-add-btn" data-id="' + cam.id + '" title="Add to grid"><i class="fas fa-th"></i></button>' +
         '    <button class="btn-icon camera-connect-btn" data-id="' + cam.id + '" title="Connect"><i class="fas fa-plug"></i></button>' +
         '    <button class="btn-icon edit-cam-btn" data-id="' + cam.id + '" title="Edit"><i class="fas fa-pen"></i></button>' +
         '    <button class="btn-icon delete-cam-btn" data-id="' + cam.id + '" title="Delete"><i class="fas fa-trash"></i></button>' +
@@ -824,6 +855,21 @@
       btn.addEventListener('click', function () {
         if (!confirm('Delete this camera?')) return;
         deleteCamera(this.getAttribute('data-id'));
+      });
+    });
+
+    list.querySelectorAll('.grid-add-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var id = this.getAttribute('data-id');
+        var cam = cameras.find(function (c) { return c.id === id; });
+        if (cam) {
+          if (gridCameras[id]) {
+            toast(cam.name + ' is already in the grid', 'info');
+            return;
+          }
+          addCameraToGrid(cam);
+          toast(cam.name + ' added to grid', 'success');
+        }
       });
     });
   }
@@ -1027,6 +1073,207 @@
       .finally(function () {
         setButtonLoading(btn, false);
       });
+  }
+
+  // ===== Grid View =====
+  function getGridColumns(count) {
+    if (count <= 1) return 1;
+    if (count <= 4) return 2;
+    if (count <= 9) return 3;
+    return 4;
+  }
+
+  function updateGridLayout() {
+    if (!els.cameraGrid) return;
+    var count = Object.keys(gridCameras).length;
+    var cols = getGridColumns(count);
+    els.cameraGrid.style.gridTemplateColumns = 'repeat(' + cols + ', 1fr)';
+    updateGridCameraCount();
+    updateGridEmptyState();
+  }
+
+  function updateGridCameraCount() {
+    if (!els.gridCameraCount) return;
+    var count = Object.keys(gridCameras).length;
+    els.gridCameraCount.textContent = count > 0 ? count : '';
+  }
+
+  function updateGridEmptyState() {
+    if (!els.gridEmptyState || !els.cameraGrid) return;
+    var count = Object.keys(gridCameras).length;
+    if (count === 0) {
+      els.gridEmptyState.style.display = 'flex';
+      els.cameraGrid.style.display = 'none';
+    } else {
+      els.gridEmptyState.style.display = 'none';
+      els.cameraGrid.style.display = 'grid';
+    }
+  }
+
+  function addCameraToGrid(camera) {
+    if (!camera || !camera.id) return;
+    if (gridCameras[camera.id]) return; // no duplicates
+
+    var tile = document.createElement('div');
+    tile.className = 'grid-tile';
+    tile.setAttribute('data-camera-id', camera.id);
+
+    var header = document.createElement('div');
+    header.className = 'grid-tile-header';
+    var nameSpan = document.createElement('span');
+    nameSpan.textContent = camera.name || 'Camera';
+    header.appendChild(nameSpan);
+
+    var recBadge = document.createElement('span');
+    recBadge.className = 'grid-tile-rec-badge';
+    recBadge.innerHTML = '<span class="rec-dot"></span> REC';
+    header.appendChild(recBadge);
+
+    var img = document.createElement('img');
+    img.alt = camera.name || 'Camera';
+    img.src = '/api/stream/mjpeg/' + encodeURIComponent(camera.id);
+
+    var placeholder = document.createElement('div');
+    placeholder.className = 'grid-tile-placeholder';
+    placeholder.style.display = 'none';
+    placeholder.innerHTML = '<i class="fas fa-video-slash"></i><p>No signal</p>';
+
+    img.onerror = function () {
+      img.style.display = 'none';
+      placeholder.style.display = 'flex';
+    };
+
+    var actions = document.createElement('div');
+    actions.className = 'grid-tile-actions';
+
+    var recBtn = document.createElement('button');
+    recBtn.className = 'grid-rec-btn';
+    recBtn.title = 'Record';
+    recBtn.innerHTML = '<i class="fas fa-circle"></i>';
+    recBtn.addEventListener('click', function () {
+      toggleGridRecording(camera);
+    });
+
+    var removeBtn = document.createElement('button');
+    removeBtn.title = 'Remove from grid';
+    removeBtn.innerHTML = '<i class="fas fa-times"></i>';
+    removeBtn.addEventListener('click', function () {
+      removeCameraFromGrid(camera.id);
+    });
+
+    actions.appendChild(recBtn);
+    actions.appendChild(removeBtn);
+
+    tile.appendChild(header);
+    tile.appendChild(img);
+    tile.appendChild(placeholder);
+    tile.appendChild(actions);
+
+    els.cameraGrid.appendChild(tile);
+
+    gridCameras[camera.id] = { camera: camera, tileEl: tile };
+    updateGridLayout();
+
+    // Auto-switch to grid view on first camera add
+    if (!isGridView && Object.keys(gridCameras).length === 1) {
+      switchToGridView();
+    }
+  }
+
+  function removeCameraFromGrid(id) {
+    var entry = gridCameras[id];
+    if (!entry) return;
+
+    // Stop recording if this camera is recording
+    if (gridRecordingCameraId === id) {
+      stopRecording();
+      gridRecordingCameraId = null;
+    }
+
+    // Clear the img src to stop the stream
+    var img = entry.tileEl.querySelector('img');
+    if (img) img.src = '';
+
+    entry.tileEl.remove();
+    delete gridCameras[id];
+    updateGridLayout();
+  }
+
+  function switchToGridView() {
+    isGridView = true;
+    if (els.singleViewContainer) els.singleViewContainer.style.display = 'none';
+    if (els.gridViewContainer) els.gridViewContainer.style.display = 'block';
+    if (els.btnSingleView) els.btnSingleView.classList.remove('active');
+    if (els.btnGridView) els.btnGridView.classList.add('active');
+    updateGridLayout();
+  }
+
+  function switchToSingleView() {
+    isGridView = false;
+    if (els.singleViewContainer) els.singleViewContainer.style.display = 'block';
+    if (els.gridViewContainer) els.gridViewContainer.style.display = 'none';
+    if (els.btnSingleView) els.btnSingleView.classList.add('active');
+    if (els.btnGridView) els.btnGridView.classList.remove('active');
+  }
+
+  function toggleGridRecording(camera) {
+    if (gridRecordingCameraId === camera.id) {
+      // Stop recording this camera
+      apiPost('/api/record/stop')
+        .then(function () {
+          toast('Recording stopped', 'info');
+          updateRecordState(false);
+          var entry = gridCameras[camera.id];
+          if (entry) {
+            var badge = entry.tileEl.querySelector('.grid-tile-rec-badge');
+            if (badge) badge.classList.remove('active');
+            var recBtn = entry.tileEl.querySelector('.grid-rec-btn');
+            if (recBtn) recBtn.classList.remove('recording');
+          }
+          gridRecordingCameraId = null;
+          fetchRecordings();
+        })
+        .catch(function (err) {
+          toast(err.message || 'Failed to stop recording', 'error');
+        });
+      return;
+    }
+
+    if (isRecording || gridRecordingCameraId) {
+      toast('Another camera is already recording. Stop it first.', 'error');
+      return;
+    }
+
+    // Build the camera URL and start recording
+    var cameraUrl = buildCameraUrlFromCamera(camera);
+    apiPost('/api/record/start', { cameraUrl: cameraUrl })
+      .then(function () {
+        toast('Recording started: ' + (camera.name || 'Camera'), 'success');
+        updateRecordState(true);
+        gridRecordingCameraId = camera.id;
+        var entry = gridCameras[camera.id];
+        if (entry) {
+          var badge = entry.tileEl.querySelector('.grid-tile-rec-badge');
+          if (badge) badge.classList.add('active');
+          var recBtn = entry.tileEl.querySelector('.grid-rec-btn');
+          if (recBtn) recBtn.classList.add('recording');
+        }
+      })
+      .catch(function (err) {
+        toast(err.message || 'Failed to start recording', 'error');
+      });
+  }
+
+  function buildCameraUrlFromCamera(camera) {
+    var auth = '';
+    if (camera.username) {
+      auth = camera.username;
+      if (camera.password) auth += ':' + camera.password;
+      auth += '@';
+    }
+    var ip = auth + camera.ip;
+    var protocol = camera.protocol || 'auto';
+    return buildCameraUrl(ip, protocol);
   }
 
   // ===== Start =====

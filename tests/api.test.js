@@ -570,6 +570,67 @@ describe('API Endpoints', () => {
     });
   });
 
+  // ===== Parameterized MJPEG Proxy Route Tests =====
+
+  describe('GET /api/stream/mjpeg/:cameraId', () => {
+    it('should return 404 for unknown camera ID', async () => {
+      const res = await request(app).get('/api/stream/mjpeg/nonexistent123');
+      expect(res.status).toBe(404);
+      expect(res.body).toHaveProperty('error', 'Camera not found.');
+    });
+
+    it('should return 502 for unreachable camera (valid ID but no server)', async () => {
+      // Add a camera to the store pointing to localhost on a closed port
+      const cam = app.cameraStore.addCamera({
+        name: 'Unreachable Cam',
+        ip: '127.0.0.1',
+        port: 19999,
+        protocol: 'http'
+      });
+
+      const res = await request(app).get(`/api/stream/mjpeg/${cam.id}`);
+      // Should get 502 since the camera server is unreachable
+      expect(res.status).toBe(502);
+      expect(res.body).toHaveProperty('error');
+      expect(res.body.error).toMatch(/Failed to connect to camera/i);
+    });
+
+    it('should accept a valid cameraId parameter', async () => {
+      // Add a camera to the store
+      const cam = app.cameraStore.addCamera({
+        name: 'Test Cam',
+        ip: '127.0.0.1',
+        port: 8554,
+        protocol: 'http'
+      });
+
+      // The route should accept the ID and attempt to connect (will fail since no server, but route exists)
+      const res = await request(app).get(`/api/stream/mjpeg/${cam.id}`);
+      // 502 means route resolved the camera and tried to connect
+      expect(res.status).toBe(502);
+    });
+
+    it('should look up camera via store and build URL', async () => {
+      const cam = app.cameraStore.addCamera({
+        name: 'URL Test Cam',
+        ip: '10.0.0.1',
+        port: 80,
+        username: 'admin',
+        password: 'pass',
+        protocol: 'http'
+      });
+
+      // Verify the camera exists in the store
+      const found = app.cameraStore.getCamera(cam.id);
+      expect(found).not.toBeNull();
+      expect(found.ip).toBe('10.0.0.1');
+
+      // Verify buildUrl produces expected URL
+      const url = app.cameraStore.buildUrl(found);
+      expect(url).toBe('http://admin:pass@10.0.0.1:80/video/mjpg.cgi');
+    });
+  });
+
   describe('Error cases', () => {
     it('should return 400 for POST /api/stream/start without JSON body', async () => {
       const res = await request(app)

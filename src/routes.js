@@ -46,6 +46,54 @@ function createRoutes(cameraManager, recorderManager, schedulerManager, cameraSt
     });
   });
 
+  // MJPEG proxy for a specific saved camera by ID (used by grid view)
+  router.get('/api/stream/mjpeg/:cameraId', (req, res) => {
+    if (!cameraStore) {
+      return res.status(404).json({ error: 'Camera not found.' });
+    }
+
+    const camera = cameraStore.getCamera(req.params.cameraId);
+    if (!camera) {
+      return res.status(404).json({ error: 'Camera not found.' });
+    }
+
+    const cameraUrl = cameraStore.buildUrl(camera);
+    if (!cameraUrl) {
+      return res.status(400).json({ error: 'Cannot build URL for camera.' });
+    }
+
+    const parsedUrl = new URL(cameraUrl);
+    const client = parsedUrl.protocol === 'https:' ? https : http;
+
+    const options = {
+      hostname: parsedUrl.hostname,
+      port: parsedUrl.port || (parsedUrl.protocol === 'https:' ? 443 : 80),
+      path: parsedUrl.pathname + parsedUrl.search,
+      auth: parsedUrl.username ? `${parsedUrl.username}:${parsedUrl.password}` : undefined,
+      timeout: 10000,
+    };
+
+    const proxyReq = client.get(options, (proxyRes) => {
+      res.writeHead(proxyRes.statusCode, {
+        'Content-Type': proxyRes.headers['content-type'] || 'multipart/x-mixed-replace',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'Access-Control-Allow-Origin': '*',
+      });
+      proxyRes.pipe(res);
+    });
+
+    proxyReq.on('error', (err) => {
+      if (!res.headersSent) {
+        res.status(502).json({ error: 'Failed to connect to camera: ' + err.message });
+      }
+    });
+
+    req.on('close', () => {
+      proxyReq.destroy();
+    });
+  });
+
   // Audio proxy with ffmpeg denoising - streams denoised audio as MP3
   router.get('/api/stream/audio', (req, res) => {
     const audioUrl = cameraManager.audioUrl;
